@@ -1,5 +1,7 @@
 # xhs-auto-login
 
+当前版本：`1.0.0`
+
 ## 用途
 
 `xhs-auto-login` 是一个小红书千帆登录守卫 skill。
