@@ -1,4 +1,4 @@
-# xhs-test 使用说明
+# xhs-feishu-bitable-sync 使用说明
 
 ## 1. 项目用途
 本项目的核心脚本是：
