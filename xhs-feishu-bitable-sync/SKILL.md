@@ -143,7 +143,7 @@ lark-cli api GET /open-apis/wiki/v2/spaces/get_node --params '{"token":"<wiki_to
 
 期望字段（字段名必须一致）：
 
-- `序号`
+- `序号`（可选，不写入也可正常运行）
 - `url`
 - `标题`
 - `正文`
@@ -156,7 +156,7 @@ lark-cli api GET /open-apis/wiki/v2/spaces/get_node --params '{"token":"<wiki_to
 - `发布时间`
 - `图片数`
 - `图片URL`
-- `获取时间(UTC)`
+- `获取时间(UTC)`（写入北京时间，格式：`YYYY-MM-DD HH:MM:SS`）
 - `图片附件(多图)`（附件字段）
 
 先读取字段：

@@ -236,7 +236,7 @@ python3 scripts/xhs_scrape_cdp.py \
 
 脚本默认按以下字段名写入（请确保表里有这些列，名称一致）：
 
-- `序号`
+- `序号`（可选，不写入也可正常运行）
 - `url`
 - `标题`
 - `正文`
@@ -249,7 +249,7 @@ python3 scripts/xhs_scrape_cdp.py \
 - `发布时间`
 - `图片数`
 - `图片URL`
-- `获取时间(UTC)`
+- `获取时间(UTC)`（写入北京时间，格式：`YYYY-MM-DD HH:MM:SS`）
 - `图片附件(多图)`（默认附件列，可通过 `--bitable-attach-field` 改名）
 
 > `url` 字段在 Base 中是强类型 Link，脚本已按对象格式写入。

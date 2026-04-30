@@ -7,7 +7,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List
 
 CDP_BASE = "http://localhost:3456"
@@ -21,6 +21,12 @@ DEFAULT_UA_POOL = [
 RISK_KEYWORDS = [
     "访问异常", "异常请求", "验证", "captcha", "人机验证", "登录后", "登录查看更多", "频繁", "稍后再试", "not available",
 ]
+
+BJ_TZ = timezone(timedelta(hours=8))
+
+
+def now_beijing_str() -> str:
+    return datetime.now(BJ_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
 EXTRACT_JS = r"""(() => {
   const nowIso = new Date().toISOString();
@@ -268,7 +274,7 @@ def scrape_one(url: str, args, index: int, total: int, ua_pool: List[str]) -> Di
             if not isinstance(data, dict):
                 raise RuntimeError(f"unexpected extract result: {data!r}")
             data.setdefault("url", url)
-            data.setdefault("fetchedAt", datetime.now(timezone.utc).isoformat())
+            data.setdefault("fetchedAt", now_beijing_str())
             return data
         except Exception as e:
             last_err = e
@@ -295,7 +301,6 @@ def sync_notes_to_bitable_direct(notes: List[Dict[str, Any]], wiki_url: str, tab
         dbg = item.get("debug") or {}
         image_count = str(dbg.get("pagerTotal") or len(imgs))
         fields = {
-            "序号": seq,
             "url": {"text": item.get("url", ""), "link": item.get("url", "")},
             "标题": item.get("title", ""),
             "正文": item.get("content", ""),
@@ -359,7 +364,7 @@ def main():
             msg = str(e)
             results.append({
                 "url": url,
-                "fetchedAt": datetime.now(timezone.utc).isoformat(),
+                "fetchedAt": now_beijing_str(),
                 "title": "", "author": "", "publishTime": "", "content": "", "tags": [], "images": [], "counts": {}, "debug": {},
                 "status": "error", "error": msg,
             })
