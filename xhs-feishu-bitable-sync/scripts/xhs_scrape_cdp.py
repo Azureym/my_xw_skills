@@ -8,7 +8,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 CDP_BASE = "http://localhost:3456"
 
@@ -154,6 +154,27 @@ def rand_sleep(a: float, b: float):
     time.sleep(random.uniform(max(0.0, a), max(a, b)))
 
 
+def resolve_redirect_url(url: str, timeout: float = 20.0) -> Tuple[str, List[str]]:
+    class _RedirectRecorder(urllib.request.HTTPRedirectHandler):
+        def __init__(self):
+            super().__init__()
+            self.chain: List[str] = []
+
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            self.chain.append(newurl)
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    recorder = _RedirectRecorder()
+    opener = urllib.request.build_opener(recorder)
+    req = urllib.request.Request(url, method="GET", headers={"User-Agent": DEFAULT_UA_POOL[0]})
+    with opener.open(req, timeout=timeout) as resp:
+        final_url = resp.geturl()
+    chain = [url] + recorder.chain
+    if chain[-1] != final_url:
+        chain.append(final_url)
+    return final_url, chain
+
+
 def load_urls(args) -> List[str]:
     items: List[str] = []
     if args.url:
@@ -257,10 +278,17 @@ def detect_risk_page(target: str, keywords: List[str]) -> str:
 
 def scrape_one(url: str, args, index: int, total: int, ua_pool: List[str]) -> Dict[str, Any]:
     last_err = None
+    resolved_url = url
+    redirect_chain = [url]
+    try:
+        resolved_url, redirect_chain = resolve_redirect_url(url, timeout=min(20.0, args.timeout))
+    except Exception:
+        resolved_url = url
+        redirect_chain = [url]
     for attempt in range(1, args.max_retries + 1):
         target = None
         try:
-            target = cdp_new(url)
+            target = cdp_new(resolved_url)
             if ua_pool:
                 apply_ua(target, random.choice(ua_pool))
             wait_for_ready(target, args.timeout)
@@ -273,7 +301,9 @@ def scrape_one(url: str, args, index: int, total: int, ua_pool: List[str]) -> Di
             data = unwrap_eval_result(cdp_eval(target, EXTRACT_JS))
             if not isinstance(data, dict):
                 raise RuntimeError(f"unexpected extract result: {data!r}")
-            data.setdefault("url", url)
+            data.setdefault("url", resolved_url)
+            data.setdefault("sourceUrl", url)
+            data.setdefault("redirectChain", redirect_chain)
             data.setdefault("fetchedAt", now_beijing_str())
             return data
         except Exception as e:
@@ -287,7 +317,7 @@ def scrape_one(url: str, args, index: int, total: int, ua_pool: List[str]) -> Di
                     cdp_close(target)
                 except Exception:
                     pass
-    raise RuntimeError(f"[{index}/{total}] failed for {url}: {last_err}")
+    raise RuntimeError(f"[{index}/{total}] failed for {url} (resolved: {resolved_url}): {last_err}")
 
 
 def sync_notes_to_bitable_direct(notes: List[Dict[str, Any]], wiki_url: str, table_id: str, attach_field_name: str):
