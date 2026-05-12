@@ -190,6 +190,7 @@ python3 scripts/xhs_scrape_cdp.py \
   --sync-feishu-bitable-wiki "<wiki_url>" \
   --bitable-table-id "<table_id>" \
   --bitable-attach-field "图片附件(多图)" \
+  --only-image-notes \
   --ua-rotate \
   --risk-circuit-breaker \
   --risk-max-hits 2 \
@@ -199,8 +200,11 @@ python3 scripts/xhs_scrape_cdp.py \
 说明：
 
 - 脚本会抓取文字与图片 URL。
+- `--only-image-notes` 开启后，仅写入有图片的笔记；视频/无图笔记会跳过（标记 `skipped_non_image`）。
 - 图片会下载并上传到飞书，再写入 `图片附件(多图)` 同一个单元格。
 - 上传临时文件会在上传后立即删除。
+- 同步时会按最终 `url` 去重，避免重复写入同一笔记。
+- 附件上传单张失败会记录告警并继续，不中断整批任务。
 
 ## 7. 输出与校验
 
@@ -214,11 +218,13 @@ lark-cli base +record-list --base-token <app_token> --table-id <table_id>
 
 - 新增记录已写入。
 - `图片附件(多图)` 字段存在且有附件 token。
+- 若开启 `--only-image-notes`，检查 `skipped_non_image` 数量是否符合预期。
 
 向用户汇报：
 
 - 成功写入条数
 - 失败条数及原因
+- 跳过条数（如 `skipped_non_image`）
 - 是否触发风控熔断
 
 ## 8. 失败处理策略
@@ -228,3 +234,4 @@ lark-cli base +record-list --base-token <app_token> --table-id <table_id>
 - wiki 非 bitable：停止执行并要求提供多维表格链接。
 - 字段缺失创建失败：汇报具体字段与错误码。
 - 小红书风控命中：按脚本熔断逻辑暂停/终止，返回可重试建议。
+- 附件上传接口偶发错误（如 5000 / EOF）：不终止整批，记录告警并在结果中说明可能存在少量附件缺失。

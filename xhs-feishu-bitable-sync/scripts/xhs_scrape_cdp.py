@@ -228,6 +228,33 @@ def base_next_seq(app_token: str, table_id: str) -> int:
     return max_seq + 1
 
 
+def parse_md_link_url(s: str) -> str:
+    text = (s or "").strip()
+    if "](" in text and text.startswith("[") and text.endswith(")"):
+        i = text.rfind("](")
+        if i >= 0:
+            return text[i + 2:-1].strip()
+    return text
+
+
+def base_existing_urls(app_token: str, table_id: str) -> set:
+    res = shell_json(["lark-cli", "base", "+record-list", "--base-token", app_token, "--table-id", table_id])
+    fields = (res.get("data") or {}).get("fields") or []
+    rows = (res.get("data") or {}).get("data") or []
+    if "url" not in fields:
+        return set()
+    idx = fields.index("url")
+    out = set()
+    for r in rows:
+        if not isinstance(r, list) or idx >= len(r):
+            continue
+        v = r[idx]
+        if not v:
+            continue
+        out.add(parse_md_link_url(str(v)))
+    return out
+
+
 def base_create_record(app_token: str, table_id: str, fields: Dict[str, Any]) -> str:
     res = shell_json(["lark-cli", "api", "POST", f"/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records", "--data", json.dumps({"fields": fields}, ensure_ascii=False)])
     rid = (((res.get("data") or {}).get("record") or {}).get("record_id")) or ""
@@ -323,8 +350,12 @@ def scrape_one(url: str, args, index: int, total: int, ua_pool: List[str]) -> Di
 def sync_notes_to_bitable_direct(notes: List[Dict[str, Any]], wiki_url: str, table_id: str, attach_field_name: str):
     app_token = parse_wiki_to_bitable(wiki_url)
     seq = base_next_seq(app_token, table_id)
+    existing_urls = base_existing_urls(app_token, table_id)
     for item in notes:
         if item.get("status") != "ok":
+            continue
+        item_url = item.get("url", "")
+        if item_url in existing_urls:
             continue
         counts = item.get("counts") or {}
         imgs = item.get("images") or []
@@ -346,8 +377,12 @@ def sync_notes_to_bitable_direct(notes: List[Dict[str, Any]], wiki_url: str, tab
             "获取时间(UTC)": item.get("fetchedAt", ""),
         }
         rid = base_create_record(app_token, table_id, fields)
+        existing_urls.add(item_url)
         for i, u in enumerate(imgs, start=1):
-            base_upload_attachment_from_url(app_token, table_id, rid, attach_field_name, u, f"xhs_{seq}_{i}.webp")
+            try:
+                base_upload_attachment_from_url(app_token, table_id, rid, attach_field_name, u, f"xhs_{seq}_{i}.webp")
+            except Exception as e:
+                print(f"[warn] attachment upload failed record={rid} image={i}: {e}")
         seq += 1
 
 
@@ -374,6 +409,7 @@ def main():
     ap.add_argument("--sync-feishu-bitable-wiki", default="")
     ap.add_argument("--bitable-table-id", default="")
     ap.add_argument("--bitable-attach-field", default="图片附件(多图)")
+    ap.add_argument("--only-image-notes", action="store_true", help="skip notes without images (e.g., video-only)")
     args = ap.parse_args()
 
     urls = load_urls(args)
@@ -381,12 +417,31 @@ def main():
 
     results: List[Dict[str, Any]] = []
     risk_hits = 0
+    skipped_non_image = 0
 
     for i, url in enumerate(urls, start=1):
         if i > 1:
             rand_sleep(args.delay_min, args.delay_max)
         try:
             note = scrape_one(url, args, i, len(urls), ua_pool)
+            if args.only_image_notes and not (note.get("images") or []):
+                results.append({
+                    "url": note.get("url", url),
+                    "sourceUrl": url,
+                    "fetchedAt": note.get("fetchedAt", now_beijing_str()),
+                    "title": note.get("title", ""),
+                    "author": note.get("author", ""),
+                    "publishTime": note.get("publishTime", ""),
+                    "content": note.get("content", ""),
+                    "tags": note.get("tags", []),
+                    "images": [],
+                    "counts": note.get("counts", {}),
+                    "debug": note.get("debug", {}),
+                    "status": "skipped",
+                    "error": "non_image_note",
+                })
+                skipped_non_image += 1
+                continue
             note["status"] = "ok"
             note["error"] = ""
             results.append(note)
@@ -411,6 +466,17 @@ def main():
         if not args.bitable_table_id:
             raise RuntimeError("--bitable-table-id is required when syncing bitable")
         sync_notes_to_bitable_direct(results, args.sync_feishu_bitable_wiki, args.bitable_table_id, args.bitable_attach_field)
+
+    ok_count = sum(1 for x in results if x.get("status") == "ok")
+    err_count = sum(1 for x in results if x.get("status") == "error")
+    skip_count = sum(1 for x in results if x.get("status") == "skipped")
+    print(json.dumps({
+        "total_input": len(urls),
+        "ok": ok_count,
+        "error": err_count,
+        "skipped": skip_count,
+        "skipped_non_image": skipped_non_image,
+    }, ensure_ascii=False))
 
 
 if __name__ == "__main__":
